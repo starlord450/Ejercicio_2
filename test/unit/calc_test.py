@@ -62,5 +62,5 @@ class TestCalculate(unittest.TestCase):
         self.assertEqual(0, self.calc.substract(0, 0))
         self.assertRaises(TypeError, self.calc.substract, "0", 0)
         
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":  
     unittest.main()
