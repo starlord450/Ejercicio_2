@@ -1,49 +1,121 @@
-pipeline{
-    agent any
-    stages{
-        stage('Get Code'){
-            steps{
-                //se obtiene el codigo del repo
-                git 'https://github.com/starlord450/Ejercicio_2'
-            }
-        }
-        stage('Build'){
-            steps{
-                echo 'Esto no es python, no hay que compilar nada!!!'
-                echo WORKSPACE
-                bat 'dir'
-            }
-        }
-        stage('Unit'){
-            steps{
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
-                    bat '''
-                    set PYTHONPATH=%WORKSPACE%
-                    "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\pytest" --junitxml=result-unit.xml test\\unit
-                    '''
-                }    
-            }
-        }
-        stage('Rest'){
-            steps{
-                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
-                    bat '''
-                    set PYTHONPATH=%WORKSPACE%
-                    set FLASK_APP=app\\api.py
-                    set FLASK_ENV=development
-                    start "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" flask run
-                    start java -jar C:\\Users\\Jorge\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\Users\\Jorge\\wiremock
-                    "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\pytest" --junitxml=result-rest.xml test\\rest
+pipeline {
+    agent none
+    stages {
+        stage('Get Code') {
+            agent {label 'principal'}
+            steps {
+                script {
 
-                    '''
+                    git 'https://github.com/starlord450/Ejercicio_2'
+                    stash name: 'stashito', includes: '**/*'
                 }
+            }
+        }
+        stage('Paralelizar'){
+            parallel{
+               stage('Unit') {
+            agent {label 'esclavo-1'}
+            steps {
+                script {
+
+                    unstash 'stashito'
+                    bat '''
+                        set PYTHONPATH=%WORKSPACE%
+                        "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\pytest" --junitxml=result-unit.xml test\\unit
+                        echo WORKSPACE
+                        hostname
+                    '''
+                    junit 'result*.xml'
+                }
+            }
+        }
+        
+        stage('Rest') {
+            agent {label 'esclavo-2'}
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    script {
+
+                        unstash 'stashito'
+                        bat '''
+                            set PYTHONPATH=%WORKSPACE%
+                            set FLASK_APP=app\\api.py
+                            set FLASK_ENV=development
+                            start "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" flask run
+                            start java -jar C:\\Users\\Jorge\\wiremock\\wiremock-standalone-3.3.1.jar --port 9090 --root-dir C:\\Users\\Jorge\\wiremock
+                            "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\pytest" --junitxml=result-rest.xml test\\rest
+                            echo WORKSPACE
+                            hostname
+                        '''
                     }
                 }
+            }
+        }
             
-        stage('Results'){
-            steps{
-                junit 'result*.xml'
+        stage('Static') {
+            agent {label 'esclavo-2'}
+            steps {
+                script {
+
+                    unstash 'stashito'
+                    bat '''
+                        "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\flake8" --exit-zero --format=pylint app >flake8.out
+                        echo WORKSPACE
+                        hostname
+                    '''
+                    recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')], qualityGates: [[threshold: 8, type: 'TOTAL', unstable: true], [threshold: 10, type: 'TOTAL', unstable: false]]
+                }
+            }
+        }
+
+        stage('Security') {
+            agent {label 'esclavo-1'}
+            steps {
+                script {
+
+                    unstash 'stashito'
+                    bat '''
+                        "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\bandit" --exit-zero -r , -f custom -o bandit.out --severity-level medium --msg-template "{abspath}:{line}: [{test_id}] {msg}"
+                            echo WORKSPACE
+                            hostname
+                    '''
+                    recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')], qualityGates: [[threshold: 2, type: 'TOTAL', unstable: true], [threshold: 4, type: 'TOTAL', unstable: false]]
+                }
+            }
+        }
+        
+        stage('Cobertura') {
+            agent {label 'esclavo-2'}
+            steps {
+                script {
+
+                    unstash 'stashito'
+                    bat '''
+                        coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                        coverage xml
+                    '''
+                    cobertura autoUpdateHealth: false, autoUpdateStability: false, coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '80, 0, 0', lineCoverageTargets: '95, 85, 90', maxNumberOfBuilds: 0, methodCoverageTargets: '80, 0, 0', onlyStable: false, sourceEncoding: 'ASCII', zoomCoverageChart: false
+                }
             }
         }
     }
-}
+        }
+                        stage('Performance') {
+                agent {label 'esclavo-1'}
+                steps {
+                    script {
+
+                        unstash 'stashito'
+                        bat '''
+                            set PYTHONPATH=%WORKSPACE%
+                            set FLASK_APP=app\\api.py
+                            set FLASK_ENV=development
+                            start "C:\\Users\\Jorge\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" flask run
+                            "C:\\apache-jmeter-5.6.3\\bin\\jmeter" -n -t test\\jmeter\\Test_Rendimiento.jmx -f -l Test_Rendimiento.jtl
+                        '''
+                        perfReport sourceDataFiles: 'Test_Rendimiento.jtl'
+                    }
+                }
+            }
+        }
+    }
