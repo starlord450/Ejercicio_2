@@ -94,7 +94,7 @@ pipeline {
                         coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
                         coverage xml
                     '''
-                    cobertura autoUpdateHealth: false, autoUpdateStability: false, coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '80, 0, 0', lineCoverageTargets: '95, 85, 90', maxNumberOfBuilds: 0, methodCoverageTargets: '80, 0, 0', onlyStable: false, sourceEncoding: 'ASCII', zoomCoverageChart: false
+                    cobertura autoUpdateHealth: false, autoUpdateStability: false, coberturaReportFile: 'coverage.xml', conditionalCoverageTargets: '100, 0, 0', lineCoverageTargets: '100, 100, 100', maxNumberOfBuilds: 0, methodCoverageTargets: '100, 0, 0', onlyStable: false, sourceEncoding: 'ASCII', zoomCoverageChart: false
                 }
             }
         }
